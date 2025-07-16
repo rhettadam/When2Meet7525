@@ -1,1 +1,1 @@
-web: gunicorn app:server 
+web: gunicorn --bind :8080 app:server
