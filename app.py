@@ -14,6 +14,11 @@ from dash import callback_context
 import json
 import dash_bootstrap_components as dbc
 
+# Add for Excel export
+import pandas as pd
+import io
+from flask import send_file
+
 # Database setup
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
@@ -106,10 +111,6 @@ def serve_homepage():
                 'maxWidth': '180px', 'height': 'auto', 'marginRight': '48px', 'marginBottom': '0', 'display': 'block', 'borderRadius': '12px', 'boxShadow': '0 2px 8px rgba(0,0,0,0.08)'}),
             html.Div([
                 html.H2('Plan a New Event', className='homepage-title'),
-                html.Label('Your Name:'),
-                dcc.Input(id='username', type='text', placeholder='Enter your name', style={'width': '100%', 'marginBottom': '8px'}),
-                html.Label('Password (optional):'),
-                dcc.Input(id='password', type='password', placeholder='Optional', style={'width': '100%', 'marginBottom': '8px'}),
                 html.Label('Event Name:'),
                 dcc.Input(id='event-name', type='text', placeholder='e.g. Team Meeting', style={'width': '100%', 'marginBottom': '8px'}),
                 html.Label('Time Zone:'),
@@ -202,7 +203,22 @@ def render_availability_grid(event, user_avail_set=None, signed_in=False, user_n
     grid_rows = []
     popovers = []
     for slot in slots:
-        row = [html.Td(slot.strftime('%#I:%M %p').replace('AM','AM').replace('PM','PM'), id={'type': 'row-header', 'time': slot.strftime('%H:%M')}, style={'cursor': 'pointer', 'userSelect': 'none', 'fontWeight': 'bold'})]
+        row = [html.Td(
+            slot.strftime('%#I:%M %p').replace('AM','AM').replace('PM','PM'),
+            id={'type': 'row-header', 'time': slot.strftime('%H:%M')},
+            style={
+                'cursor': 'pointer',
+                'userSelect': 'none',
+                'fontWeight': 'bold',
+                'position': 'sticky',
+                'left': 0,
+                'background': '#232323',
+                'zIndex': 2,
+                'minWidth': '60px',
+                'maxWidth': '80px',
+                'borderRight': '2px solid #5A8CC8',
+            }
+        )]
         for date in dates:
             key = (str(date), slot.strftime('%H:%M'))
             available_names = avail_dict.get(key, [])
@@ -257,7 +273,8 @@ def render_availability_grid(event, user_avail_set=None, signed_in=False, user_n
         html.Thead(html.Tr(grid_header)),
         html.Tbody(grid_rows)
     ], style={'borderCollapse': 'collapse', 'margin': '0 auto'})
-    return html.Div([grid] + popovers)
+    # Wrap grid in a div with scroll cue class and right padding
+    return html.Div([grid] + popovers, className='grid-scroll-cue', style={'overflowX': 'auto', 'maxWidth': '100vw', 'position': 'relative', 'paddingRight': '24px'})
 
 def serve_event_page(event_id, user_name=None, user_avail_set=None, signed_in=False):
     session = SessionLocal()
@@ -276,13 +293,26 @@ def serve_event_page(event_id, user_name=None, user_avail_set=None, signed_in=Fa
         html.Div([
             html.Div([
                 html.B('Share this link to invite others:'),
-                dcc.Input(value=event_link, readOnly=True, style={'width': '100%', 'marginTop': '8px', 'marginBottom': '16px', 'fontSize': '15px', 'background': '#232323', 'color': '#fff', 'border': '1px solid #5A8CC8', 'borderRadius': '4px'})
-            ], style={'maxWidth': '600px', 'margin': '0 auto', 'marginBottom': '12px'}),
+                dcc.Input(value=event_link, readOnly=True, style={'width': '100%', 'marginTop': '8px', 'marginBottom': '16px', 'fontSize': '15px', 'background': '#232323', 'color': '#fff', 'border': '1px solid #5A8CC8', 'borderRadius': '4px'}),
+                html.A(
+                    "Export to Excel",
+                    href=f"/export_availability/{event_id}",
+                    target="_blank",
+                    style={
+                        'marginLeft': '12px',
+                        'fontWeight': 'bold',
+                        'color': '#E77D2E',
+                        'textDecoration': 'underline',
+                        'fontSize': '15px',
+                        'cursor': 'pointer'
+                    }
+                )
+            ], style={'maxWidth': '600px', 'margin': '0 auto', 'marginBottom': '12px', 'display': 'flex', 'alignItems': 'center'}),
             html.H2(event.name, style={'marginBottom': '0.5em'}),
             html.P(f"Timezone: {event.timezone}"),
             html.P(f"Date Range: {event.start_date.date()} to {event.end_date.date()}"),
             html.P(f"Time Range: {event.start_time} to {event.end_time}"),
-            html.Hr()
+            html.Hr(),
         ], style={'textAlign': 'center', 'maxWidth': '600px', 'margin': '0 auto'}),
         html.Div([
             html.Div([
@@ -348,8 +378,6 @@ def display_page(pathname):
     Output('create-event-output', 'children'),
     Output('url', 'pathname'),
     Input('create-event-btn', 'n_clicks'),
-    State('username', 'value'),
-    State('password', 'value'),
     State('event-name', 'value'),
     State('timezone', 'value'),
     State('date-range', 'start_date'),
@@ -362,8 +390,8 @@ def display_page(pathname):
     State('end-ampm', 'value'),
     prevent_initial_call=True
 )
-def create_event(n_clicks, username, password, event_name, timezone, start_date, end_date, start_hour, start_minute, start_ampm, end_hour, end_minute, end_ampm):
-    if not username or not event_name or not timezone or not start_date or not end_date or not start_hour or not start_minute or not start_ampm or not end_hour or not end_minute or not end_ampm:
+def create_event(n_clicks, event_name, timezone, start_date, end_date, start_hour, start_minute, start_ampm, end_hour, end_minute, end_ampm):
+    if not event_name or not timezone or not start_date or not end_date or not start_hour or not start_minute or not start_ampm or not end_hour or not end_minute or not end_ampm:
         return 'Please fill in all required fields.', dash.no_update
     # Convert to 24-hour format
     def to_24h(hour, minute, ampm):
@@ -633,27 +661,23 @@ def save_user_availability(n_clicks, user_avail, user_data, pathname):
     Output('grid-tooltip', 'children', allow_duplicate=True),
     Output('grid-tooltip', 'style', allow_duplicate=True),
     Input('event-availability-grid', 'n_mouseover'),
-    Input('event-availability-grid', 'n_clicks'),
     Input({'type': 'grid-cell', 'id': ALL}, 'n_mouseover'),
-    Input({'type': 'grid-cell', 'id': ALL}, 'n_clicks'),
     State('event-user-store', 'data'),
     State('user-availability-store', 'data'),
     State('url', 'pathname'),
     State('grid-tooltip', 'style'),
     prevent_initial_call=True
 )
-def show_grid_tooltip(grid_mouseover, grid_click, cell_mouseovers, cell_clicks, user_data, user_avail, pathname, tooltip_style):
+def show_grid_tooltip(grid_mouseover, cell_mouseovers, user_data, user_avail, pathname, tooltip_style):
     ctx = callback_context
     if not ctx.triggered:
         return dash.no_update, dash.no_update
-    
     # Don't show tooltips when user is signed in (editing their availability)
     if user_data and user_data.get('username'):
         style = tooltip_style.copy() if tooltip_style else {}
         style['display'] = 'none'
         return '', style
-    
-    # Find which cell was hovered or clicked
+    # Find which cell was hovered
     prop_id = ctx.triggered[0]['prop_id']
     if 'grid-cell' not in prop_id:
         # Hide tooltip if not on a cell
@@ -760,12 +784,76 @@ def serve_admin_dashboard(message=None):
     # Fetch all events
     session = SessionLocal()
     events = session.query(When2MeetEvent).order_by(When2MeetEvent.id.desc()).all()
-    session.close()
     event_rows = []
     for event in events:
+        # Fetch availabilities for this event
+        availabilities = session.query(When2MeetAvailability).filter_by(event_id=event.id).all()
+        # Build user->date->set(times) mapping
+        user_date_times = {}
+        for a in availabilities:
+            dt = a.time_slot.split('T')
+            if len(dt) == 2:
+                d, t = dt
+                user_date_times.setdefault(a.user_name, {}).setdefault(d, set()).add(t)
+        # Get all users and all dates for this event
+        users = sorted(user_date_times.keys())
+        start_date = event.start_date.date()
+        end_date = event.end_date.date()
+        num_days = (end_date - start_date).days + 1
+        dates = [str(start_date + datetime.timedelta(days=i)) for i in range(num_days)]
+        # Get all possible times for this event
+        def parse_time(tstr):
+            h, m = map(int, tstr.split(':'))
+            return datetime.time(hour=h, minute=m)
+        start_time = parse_time(event.start_time)
+        end_time = parse_time(event.end_time)
+        slots = []
+        t = datetime.datetime.combine(datetime.date.today(), start_time)
+        end_dt = datetime.datetime.combine(datetime.date.today(), end_time)
+        while t <= end_dt:
+            slots.append(t.time())
+            t += datetime.timedelta(minutes=30)
+        slot_strs = [s.strftime('%H:%M') for s in slots]
+        # Helper to merge consecutive times into ranges
+        def merge_times(times):
+            times = sorted(times)
+            ranges = []
+            i = 0
+            while i < len(times):
+                start = times[i]
+                j = i
+                while j+1 < len(times) and (
+                    datetime.datetime.strptime(times[j+1], '%H:%M') - datetime.datetime.strptime(times[j], '%H:%M')).seconds == 1800:
+                    j += 1
+                end = times[j]
+                # Format nicely
+                start_dt = datetime.datetime.strptime(start, '%H:%M')
+                end_dt = datetime.datetime.strptime(end, '%H:%M') + datetime.timedelta(minutes=30)
+                if start == end:
+                    label = start_dt.strftime('%#I:%M%p').lower()
+                else:
+                    label = f"{start_dt.strftime('%#I:%M')}-{end_dt.strftime('%#I:%M%p').lower()}"
+                ranges.append(label)
+                i = j+1
+            return ', '.join(ranges)
+        # Build compact summary table
+        if users:
+            summary_table = html.Table([
+                html.Thead(html.Tr([html.Th('User')] + [html.Th(datetime.datetime.strptime(d, '%Y-%m-%d').strftime('%a %b %d')) for d in dates])),
+                html.Tbody([
+                    html.Tr([
+                        html.Td(user)
+                    ] + [
+                        html.Td(merge_times(user_date_times[user].get(d, [])) if d in user_date_times[user] else '—', style={'color': '#5a8cc8' if d in user_date_times[user] else '#aaa'})
+                        for d in dates
+                    ]) for user in users
+                ])
+            ], style={'margin': '8px 0 16px 0', 'background': '#232323', 'color': '#f5f5f5', 'borderRadius': '6px', 'fontSize': '13px', 'width': 'auto', 'textAlign': 'center'})
+        else:
+            summary_table = html.Div('No availabilities yet.', style={'fontSize': '13px', 'color': '#aaa', 'margin': '8px 0 16px 0'})
         event_rows.append(html.Tr([
             html.Td(event.name),
-            html.Td(html.A(f'/event/{event.url}', href=f'/event/{event.url}', target='_blank', style={'color': '#5A8CC8'})),
+            html.Td(html.A(f'/event/{event.url}', href=f'/event/{event.url}', target='_blank', style={'color': '#E77D2E'})),
             html.Td(event.timezone),
             html.Td(f"{event.start_date.date()} to {event.end_date.date()}"),
             html.Td([
@@ -774,6 +862,11 @@ def serve_admin_dashboard(message=None):
                 })
             ])
         ]))
+        # Add a summary row below each event
+        event_rows.append(html.Tr([
+            html.Td(summary_table, colSpan=5, style={'background': '#181818', 'padding': '8px 0 16px 0'})
+        ]))
+    session.close()
     table = html.Table([
         html.Thead(html.Tr([
             html.Th('Event Name'), html.Th('Link'), html.Th('Timezone'), html.Th('Date Range'), html.Th('Actions')
@@ -850,6 +943,64 @@ def refresh_page_after_save(n_clicks, pathname):
         # Force a page refresh by redirecting to the same URL
         return pathname
     return dash.no_update
+
+# Add Flask route for Excel export
+@server.route('/export_availability/<event_id>')
+def export_availability(event_id):
+    session = SessionLocal()
+    event = session.query(When2MeetEvent).filter_by(url=event_id).first()
+    if not event:
+        session.close()
+        return "Event not found", 404
+    # Get all availabilities for this event
+    availabilities = session.query(When2MeetAvailability).filter_by(event_id=event.id).all()
+    session.close()
+    # Build user/date/time mapping
+    user_date_times = {}
+    for a in availabilities:
+        dt = a.time_slot.split('T')
+        if len(dt) == 2:
+            d, t = dt
+            user_date_times.setdefault(a.user_name, {}).setdefault(d, set()).add(t)
+    users = sorted(user_date_times.keys())
+    start_date = event.start_date.date()
+    end_date = event.end_date.date()
+    num_days = (end_date - start_date).days + 1
+    dates = [str(start_date + datetime.timedelta(days=i)) for i in range(num_days)]
+    # Get all possible times for this event
+    def parse_time(tstr):
+        h, m = map(int, tstr.split(':'))
+        return datetime.time(hour=h, minute=m)
+    start_time = parse_time(event.start_time)
+    end_time = parse_time(event.end_time)
+    slots = []
+    t = datetime.datetime.combine(datetime.date.today(), start_time)
+    end_dt = datetime.datetime.combine(datetime.date.today(), end_time)
+    while t <= end_dt:
+        slots.append(t.time())
+        t += datetime.timedelta(minutes=30)
+    slot_strs = [s.strftime('%H:%M') for s in slots]
+    # Build a DataFrame: rows = users, columns = date+time, value = 1 if available else 0
+    columns = []
+    for d in dates:
+        for t in slot_strs:
+            columns.append(f"{d} {t}")
+    data = []
+    for user in users:
+        row = []
+        for d in dates:
+            for t in slot_strs:
+                row.append(1 if d in user_date_times[user] and t in user_date_times[user][d] else 0)
+        data.append(row)
+    df = pd.DataFrame(data, columns=columns, index=users)
+    df.index.name = 'User'
+    # Write to Excel in memory
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Availability')
+    output.seek(0)
+    filename = f"when2meet_availability_{event_id}.xlsx"
+    return send_file(output, download_name=filename, as_attachment=True, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 if __name__ == '__main__':
     app.run(debug=False)
