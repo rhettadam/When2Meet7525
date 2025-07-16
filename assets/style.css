@@ -1,0 +1,97 @@
+.homepage-flex {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin: 0 auto;
+    min-height: 80vh;
+}
+.homepage-logo {
+    max-width: 260px !important;
+    width: 100%;
+    height: auto;
+    margin-bottom: 32px !important;
+    margin-top: 32px !important;
+    display: block;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.homepage-form {
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+@media (max-width: 700px) {
+    .homepage-flex { flex-direction: column !important; align-items: center !important; }
+    .homepage-logo { margin-bottom: 24px !important; margin-top: 24px !important; margin-right: 0 !important; max-width: 200px !important; }
+    .homepage-form { max-width: 100vw !important; padding: 0 18px !important; }
+    .admin-form { max-width: 100vw !important; padding: 0 18px !important; margin-top: 40px; }
+}
+
+.homepage-title {
+    font-size: 1.3em;
+    margin-bottom: 0.7em;
+    font-weight: bold;
+}
+
+.admin-form .homepage-title {
+    margin-top: 32px;
+}
+
+@media (max-width: 700px) {
+    .admin-dashboard-table-wrapper {
+        overflow-x: auto;
+        width: 100%;
+    }
+    .admin-dashboard-table th,
+    .admin-dashboard-table td {
+        font-size: 13px;
+        padding: 6px 4px;
+        word-break: break-word;
+    }
+    .admin-dashboard-table .delete-btn {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+}
+.admin-dashboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #232323;
+    color: #f5f5f5;
+    border-radius: 8px;
+}
+.admin-dashboard-table th, .admin-dashboard-table td {
+    padding: 10px 8px;
+    text-align: left;
+}
+.admin-dashboard-table th {
+    background: #1a1a1a;
+    font-weight: bold;
+    padding-bottom: 8px;
+}
+.admin-dashboard-table td {
+    padding-top: 4px;
+}
+.admin-dashboard-table tr:nth-child(even) {
+    background: #222;
+}
+.delete-btn {
+    background: #E77D2E;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 13px;
+}
+/* Add spacing to prevent accidental header clicks in availability grid */
+table th {
+    padding-bottom: 8px;
+}
+table td {
+    padding-top: 4px;
+}
